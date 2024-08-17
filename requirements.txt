@@ -1,0 +1,2 @@
+requests==2.22.0
+logging==0.4.9.6
