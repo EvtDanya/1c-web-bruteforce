@@ -451,7 +451,9 @@ def main():
     if found_credentials:
         logging.info("Credentials found:")
         for cred in found_credentials:
-            logging.info(f"\033[92m{cred}\033[0m")
+            logging.info(
+                f"{PrintColors.OKGREEN.value}{cred}{PrintColors.ENDC.value}"
+            )
 
 
 if __name__ == "__main__":
