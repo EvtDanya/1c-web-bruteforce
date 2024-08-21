@@ -27,19 +27,19 @@ python 1c_brute.py https://localhost/docCorp users.txt passwords.txt
 ```
 
 ### Проверка пользователей с пустыми паролями
-Если вы хотите проверить пользователей с пустыми паролями, используйте опцию --check-empty-passwords:
+Если вы хотите проверить пользователей с пустыми паролями, используйте опцию `--check-empty-passwords`:
 ```python
 python 1c_brute.py https://localhost/docCorp users.txt --check-empty-passwords
 ```
 
 ### Автоматическое получение пользователей из веб-интерфейса
-Для автоматического получения пользователей из веб-интерфейса 1С используйте опцию --get-users:
+Для автоматического получения пользователей из веб-интерфейса 1С используйте опцию `--get-users`:
 ```python
-python 1c_brute.py https://localhost/docCorp users.txt --get-users
+python 1c_brute.py https://localhost/docCorp --get-users passwords.txt
 ```
 
 ### Указание количества потоков
-Для настройки количества потоков используйте опцию --threads:
+Для настройки количества потоков используйте опцию `--threads`:
 ```python
 python 1c_brute.py https://localhost/docCorp users.txt passwords.txt --threads 20
 ```
